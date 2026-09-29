@@ -2077,7 +2077,7 @@ Page({
             this.stopAnimationLoopIfIdle();
           }
         },
-        30
+        20
       );
   },
 
