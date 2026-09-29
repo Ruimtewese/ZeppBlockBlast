@@ -37,9 +37,9 @@ const BOARD_X =
   Math.floor((WIDTH - BOARD_PX) / 2);
 const BOARD_Y = 58;
 
-const TRAY_Y = 338;
-const TRAY_W = 112;
-const TRAY_H = 106;
+const TRAY_Y = 334;
+const TRAY_W = 108;
+const TRAY_H = 94;
 const TRAY_GAP = 9;
 
 const TRAY_X = [
@@ -48,9 +48,9 @@ const TRAY_X = [
   18 + (TRAY_W + TRAY_GAP) * 2,
 ];
 
-const PREVIEW_CELL = 15;
+const PREVIEW_CELL = 14;
 const PREVIEW_GAP = 2;
-const BLOCK_RADIUS = 5;
+const BLOCK_RADIUS = 4;
 
 const COLORS = [
   0xA8E6CF,
@@ -215,6 +215,29 @@ Page({
         );
       }
     );
+
+    // Dedicated transparent hit areas make the three piece
+    // slots reliable on-device while the game remains rendered
+    // by one lightweight Canvas.
+    this.pieceHitTargets = [];
+
+    for (let index = 0; index < 3; index += 1) {
+      const hitTarget = createWidget(widget.FILL_RECT, {
+        x: TRAY_X[index],
+        y: TRAY_Y,
+        w: TRAY_W,
+        h: TRAY_H,
+        color: 0x000000,
+        alpha: 0,
+      });
+
+      hitTarget.addEventListener(
+        event.CLICK_UP,
+        () => this.selectPiece(index)
+      );
+
+      this.pieceHitTargets.push(hitTarget);
+    }
 
     this.createHeader();
     this.createNewButton();
@@ -433,29 +456,13 @@ Page({
           x,
           y,
           79,
-          246,
+          244,
           232,
           58
         )
       ) {
         this.startNewGame();
       }
-      return;
-    }
-
-    const trayIndex =
-      this.getTrayIndexAt(
-        x,
-        y
-      );
-
-    if (
-      trayIndex >= 0
-    ) {
-      this.selectPiece(
-        trayIndex
-      );
-
       return;
     }
 
@@ -546,38 +553,6 @@ Page({
       row,
       col,
     };
-  },
-
-  getTrayIndexAt(x, y) {
-    if (
-      y < TRAY_Y ||
-      y >=
-        TRAY_Y +
-        TRAY_H
-    ) {
-      return -1;
-    }
-
-    for (
-      let i = 0;
-      i < 3;
-      i += 1
-    ) {
-      if (
-        inRect(
-          x,
-          y,
-          TRAY_X[i],
-          TRAY_Y,
-          TRAY_W,
-          TRAY_H
-        )
-      ) {
-        return i;
-      }
-    }
-
-    return -1;
   },
 
   selectPiece(index) {
@@ -1556,7 +1531,7 @@ Page({
           "✓",
           x +
             TRAY_W / 2,
-          y + 42,
+          y + 34,
           22,
           MUTED
         );
