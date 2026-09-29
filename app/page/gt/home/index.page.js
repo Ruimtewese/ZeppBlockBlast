@@ -158,8 +158,6 @@ Page({
     this.gameOver = false;
     this.locked = false;
 
-    this.status = "TAP A BLOCK";
-
     this.hoverCell = null;
     this.placementAnimation = null;
     this.placementAnimationTimer = null;
@@ -1078,9 +1076,10 @@ Page({
       14
     );
 
-    const animated = this.placementAnimation
-      ? this.placementAnimation.cells
-      : null;
+    const animated =
+      this.placementAnimation
+        ? this.placementAnimation.cells
+        : null;
 
     for (
       let row = 0;
@@ -1092,18 +1091,27 @@ Page({
         col < BOARD_SIZE;
         col += 1
       ) {
+        let hidden = false;
 
+        if (animated) {
+          for (const cell of animated) {
+            if (
+              cell.row === row &&
+              cell.col === col
+            ) {
+              hidden = true;
+              break;
+            }
+          }
+        }
 
         this.drawRoundedBlock(
-          BOARD_X +
-            col *
-              STRIDE,
-          BOARD_Y +
-            row *
-              STRIDE,
+          BOARD_X + col * STRIDE,
+          BOARD_Y + row * STRIDE,
           CELL,
-          this.board[row][col] ||
-            EMPTY,
+          hidden
+            ? EMPTY
+            : this.board[row][col] || EMPTY,
           1
         );
       }
@@ -1112,7 +1120,7 @@ Page({
 
   drawGhost() {
     if (
-      !this.selectedPiece ||
+      this.selectedPiece < 0 ||
       !this.pieces[
         this.selectedPiece
       ] ||
@@ -1203,26 +1211,6 @@ Page({
   },
 
   drawTray() {
-    const now =
-      Date.now();
-
-    let pulse = 0;
-
-    if (
-      this.selectedPiece >=
-        0 &&
-      !this.locked
-    ) {
-      pulse =
-        (
-          Math.sin(
-            now / 140
-          ) +
-          1
-        ) /
-        2;
-    }
-
     for (
       let index = 0;
       index < 3;
@@ -1251,10 +1239,7 @@ Page({
         border,
         20,
         selected
-          ? 2 +
-            Math.round(
-              pulse * 2
-            )
+          ? 3
           : 2
       );
 
