@@ -486,6 +486,12 @@ Page({
     this.selectedPiece = -1;
     this.pieces[usedIndex] = randomPiece();
 
+    this.score += placedCells.length;
+    vibrateLight();
+    this.playPlaceSound();
+    this.updateScore();
+    this.updateBoard();
+
     placedCells.forEach(({ row: r, col: c }) => {
       const index = r * BOARD_SIZE + c;
       popIn(
@@ -497,12 +503,6 @@ Page({
         { duration: 140, scale: 0.75 }
       );
     });
-
-    this.score += placedCells.length;
-    vibrateLight();
-    this.playPlaceSound();
-    this.updateScore();
-    this.updateBoard();
     this.updatePieceSelection();
     this.renderPiecePreview(usedIndex);
     this.setStatus("KEEP GOING");
