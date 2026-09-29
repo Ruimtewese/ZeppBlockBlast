@@ -1,15 +1,7 @@
 import {
   setupPage,
-  card,
   text,
-  button,
   pillAligned,
-  outlineCard,
-  prop,
-  popIn,
-  fadeOut,
-  fadeIn,
-  shake,
   getNumber,
   setNumber,
   vibrateLight,
@@ -22,6 +14,12 @@ import {
   exitApp,
 } from "zeppcore";
 
+import {
+  createWidget,
+  widget,
+  event,
+} from "@zos/ui";
+
 const WIDTH = 390;
 const HEIGHT = 450;
 
@@ -29,16 +27,22 @@ const BOARD_SIZE = 8;
 const CELL = 30;
 const GAP = 2;
 const STRIDE = CELL + GAP;
-const BOARD_X = 63;
-const BOARD_Y = 62;
 const BOARD_PX = BOARD_SIZE * CELL + (BOARD_SIZE - 1) * GAP;
+const BOARD_X = Math.floor((WIDTH - BOARD_PX) / 2);
+const BOARD_Y = 58;
 
-const TRAY_Y = 350;
-const TRAY_W = 108;
-const TRAY_H = 94;
-const TRAY_X = [18, 141, 264];
-const PREVIEW_CELL = 16;
-const PREVIEW_GAP = 3;
+const TRAY_Y = 338;
+const TRAY_W = 112;
+const TRAY_H = 106;
+const TRAY_GAP = 9;
+const TRAY_X = [
+  8,
+  8 + TRAY_W + TRAY_GAP,
+  8 + (TRAY_W + TRAY_GAP) * 2,
+];
+
+const PREVIEW_CELL = 15;
+const PREVIEW_GAP = 2;
 
 const COLORS = [
   0xA8E6CF,
@@ -49,15 +53,16 @@ const COLORS = [
   0xFFF0A6,
 ];
 
-const EMPTY = 0x111722;
-const EMPTY_PRESSED = 0x1A2331;
-const BOARD_FRAME = 0x080B10;
-const CARD = 0x0D121B;
+const EMPTY = 0x151C27;
+const GRID_FRAME = 0x0A0E15;
+const TRAY_FILL = 0x0D121B;
+const TRAY_BORDER = 0x253040;
+const TRAY_SELECTED = 0xA8E6CF;
 const TEXT = 0xF5F7FA;
 const MUTED = 0x8D98A8;
 const ACCENT = 0xA8E6CF;
 const ACCENT_PRESSED = 0x82CBB1;
-const OVERLAY = 0x05070B;
+const OVERLAY = 0x070A10;
 
 const SHAPES = [
   [[0, 0]],
@@ -82,64 +87,103 @@ const SHAPES = [
   ],
 ];
 
-const PIECE_PREVIEW_NAMES = ["1", "2", "3"];
-
 function cloneCells(cells) {
-  return cells.map(([r, c]) => [r, c]);
+  return cells.map(([row, col]) => [row, col]);
 }
 
 function randomPiece() {
-  const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+  const cells = cloneCells(
+    SHAPES[Math.floor(Math.random() * SHAPES.length)]
+  );
+
   return {
-    cells: cloneCells(shape),
+    cells,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
   };
 }
 
-function key(row, col) {
-  return row + ":" + col;
+function inRect(x, y, rectX, rectY, rectW, rectH) {
+  return (
+    x >= rectX &&
+    x < rectX + rectW &&
+    y >= rectY &&
+    y < rectY + rectH
+  );
 }
 
 Page({
   onInit() {
-    setupPage({ hideStatusBar: true });
-    this.board = Array.from({ length: BOARD_SIZE }, () =>
-      Array(BOARD_SIZE).fill(null)
-    );
+    setupPage({
+      hideStatusBar: true,
+    });
+
+    this.board = this.makeEmptyBoard();
     this.pieces = [randomPiece(), randomPiece(), randomPiece()];
     this.selectedPiece = -1;
+    this.usedPieces = 0;
+
     this.score = 0;
     this.best = getNumber("blockblast_best", 0);
-    this.busy = false;
-    this.overlayWidgets = [];
-    this.previewWidgets = [[], [], []];
+
+    this.gameOver = false;
+    this.locked = false;
+
     this.systemSounds = createSystemSounds();
     this.soundTypes = getSystemSoundTypes(this.systemSounds);
   },
 
   build() {
-    card({
+    this.createBackground();
+    this.createHeader();
+
+    this.canvas = createWidget(widget.CANVAS, {
+      x: 0,
+      y: 0,
+      w: WIDTH,
+      h: HEIGHT,
+    });
+
+    this.canvas.addEventListener(
+      event.CLICK_UP,
+      (info) => this.onCanvasTap(info.x, info.y)
+    );
+
+    this.createNewButton();
+
+    onBackKey(() => exitApp());
+
+    this.redraw();
+  },
+
+  onDestroy() {
+    offKeyPress();
+  },
+
+  makeEmptyBoard() {
+    return Array.from(
+      { length: BOARD_SIZE },
+      () => Array(BOARD_SIZE).fill(null)
+    );
+  },
+
+  createBackground() {
+    // ZeppCore UI remains responsible for the page background.
+    const background = createWidget(widget.FILL_RECT, {
       x: 0,
       y: 0,
       w: WIDTH,
       h: HEIGHT,
       color: 0x000000,
-      radius: 0,
     });
 
-    card({
-      x: BOARD_X - 7,
-      y: BOARD_Y - 7,
-      w: BOARD_PX + 14,
-      h: BOARD_PX + 14,
-      color: BOARD_FRAME,
-      radius: 18,
-    });
+    background.setTouchEnabled?.(false);
+  },
 
-    this.title = text({
-      x: 18,
-      y: 7,
-      w: 125,
+  createHeader() {
+    text({
+      x: 16,
+      y: 6,
+      w: 110,
       h: 20,
       value: "BLOCKS",
       color: ACCENT,
@@ -147,540 +191,661 @@ Page({
     });
 
     this.scoreText = text({
-      x: 18,
-      y: 24,
-      w: 150,
-      h: 34,
+      x: 16,
+      y: 25,
+      w: 120,
+      h: 30,
       value: "0",
       color: TEXT,
-      size: 30,
+      size: 28,
     });
 
     this.bestPill = pillAligned({
-      x: 182,
+      x: 186,
       y: 10,
-      w: 104,
-      h: 38,
+      w: 105,
+      h: 36,
       text: "BEST " + this.best,
       textColor: TEXT,
-      textSize: 14,
-      normalColor: CARD,
-      pressColor: CARD,
-      radius: 19,
+      textSize: 13,
+      normalColor: 0x0D121B,
+      pressColor: 0x0D121B,
+      radius: 18,
     });
-
-    this.newPill = pillAligned({
-      x: 294,
-      y: 10,
-      w: 78,
-      h: 38,
-      text: "NEW",
-      textColor: 0x000000,
-      textSize: 15,
-      normalColor: ACCENT,
-      pressColor: ACCENT_PRESSED,
-      radius: 19,
-      onClick: () => this.startNewGame(),
-    });
-
-    this.statusText = text({
-      x: 60,
-      y: 335,
-      w: BOARD_PX,
-      h: 18,
-      value: "TAP A BLOCK",
-      color: MUTED,
-      size: 14,
-    });
-
-    this.boardWidgets = [];
-    for (let row = 0; row < BOARD_SIZE; row += 1) {
-      for (let col = 0; col < BOARD_SIZE; col += 1) {
-        const r = row;
-        const c = col;
-        const cell = card({
-          x: BOARD_X + c * STRIDE,
-          y: BOARD_Y + r * STRIDE,
-          w: CELL,
-          h: CELL,
-          color: EMPTY,
-          radius: 7,
-          onClick: () => this.onBoardTap(r, c),
-        });
-        this.boardWidgets.push(cell);
-      }
-    }
-
-    for (let i = 0; i < 3; i += 1) {
-      outlineCard({
-        x: TRAY_X[i],
-        y: TRAY_Y,
-        w: TRAY_W,
-        h: TRAY_H,
-        color: 0x263040,
-        radius: 22,
-        lineWidth: 2,
-      });
-
-      text({
-        x: TRAY_X[i] + 8,
-        y: TRAY_Y + 5,
-        w: 16,
-        h: 16,
-        value: PIECE_PREVIEW_NAMES[i],
-        color: MUTED,
-        size: 12,
-      });
-
-      this.renderPiecePreview(i);
-    }
-
-    this.createGameOverOverlay();
-    this.hideOverlay();
-    onBackKey(() => exitApp());
-    this.updateAll();
   },
 
-  onDestroy() {
-    offKeyPress();
+  createNewButton() {
+    this.newButton = pillAligned({
+      x: 298,
+      y: 10,
+      w: 76,
+      h: 36,
+      text: "NEW",
+      textColor: 0x000000,
+      textSize: 14,
+      normalColor: ACCENT,
+      pressColor: ACCENT_PRESSED,
+      radius: 18,
+      onClick: () => this.startNewGame(),
+    });
   },
 
   startNewGame() {
-    if (this.busy) return;
+    if (this.locked) return;
 
-    this.busy = true;
-    this.hideOverlay();
-    this.board = Array.from({ length: BOARD_SIZE }, () =>
-      Array(BOARD_SIZE).fill(null)
-    );
+    this.board = this.makeEmptyBoard();
     this.pieces = [randomPiece(), randomPiece(), randomPiece()];
     this.selectedPiece = -1;
+    this.usedPieces = 0;
     this.score = 0;
-    this.busy = false;
-    this.updateAll();
-    this.setStatus("TAP A BLOCK");
+    this.gameOver = false;
+
+    this.updateScoreText();
+    this.redraw();
   },
 
-  createGameOverOverlay() {
-    const panel = card({
-      x: 20,
-      y: 105,
-      w: 350,
-      h: 235,
-      color: OVERLAY,
-      radius: 30,
-    });
+  onCanvasTap(x, y) {
+    if (this.locked) return;
 
-    const accent = card({
-      x: 45,
-      y: 105,
-      w: 300,
-      h: 7,
-      color: ACCENT,
-      radius: 4,
-    });
-
-    const title = text({
-      x: 45,
-      y: 135,
-      w: 300,
-      h: 48,
-      value: "GAME OVER",
-      color: TEXT,
-      size: 31,
-    });
-
-    const score = text({
-      x: 55,
-      y: 186,
-      w: 280,
-      h: 28,
-      value: "SCORE 0",
-      color: ACCENT,
-      size: 20,
-    });
-
-    const best = text({
-      x: 55,
-      y: 214,
-      w: 280,
-      h: 24,
-      value: "BEST " + this.best,
-      color: MUTED,
-      size: 17,
-    });
-
-    const again = pillAligned({
-      x: 80,
-      y: 255,
-      w: 230,
-      h: 58,
-      text: "PLAY AGAIN",
-      textColor: 0x000000,
-      textSize: 18,
-      normalColor: ACCENT,
-      pressColor: ACCENT_PRESSED,
-      radius: 29,
-      onClick: () => this.startNewGame(),
-    });
-
-    this.overlayWidgets = [
-      panel,
-      accent,
-      title,
-      score,
-      best,
-      again.button,
-      again.text,
-    ];
-    this.overlayScore = score;
-    this.overlayBest = best;
-  },
-
-  hideOverlay() {
-    if (!this.overlayWidgets.length) return;
-    this.overlayWidgets.forEach((widgetItem) => {
-      widgetItem.setProperty(prop.MORE, {
-        x: 1000,
-        y: 1000,
-      });
-    });
-  },
-
-  showOverlay() {
-    const positions = [
-      [20, 105, 350, 235],
-      [45, 105, 300, 7],
-      [45, 135, 300, 48],
-      [55, 186, 280, 28],
-      [55, 214, 280, 24],
-      [80, 255, 230, 58],
-      [80, 255, 230, 58],
-    ];
-
-    this.overlayWidgets.forEach((widgetItem, index) => {
-      const [x, y, w, h] = positions[index];
-      widgetItem.setProperty(prop.MORE, { x, y, w, h });
-    });
-
-    this.overlayScore.setProperty(prop.MORE, {
-      text: "SCORE " + this.score,
-    });
-    this.overlayBest.setProperty(prop.MORE, {
-      text: "BEST " + this.best,
-    });
-  },
-
-  renderPiecePreview(index) {
-    const containerX = TRAY_X[index];
-    const containerY = TRAY_Y;
-    const piece = this.pieces[index];
-    const cells = piece.cells;
-    const maxPreviewCells = 9;
-
-    const maxRow = Math.max(...cells.map(([r]) => r));
-    const maxCol = Math.max(...cells.map(([, c]) => c));
-    const rows = maxRow + 1;
-    const cols = maxCol + 1;
-    const previewW = cols * PREVIEW_CELL + (cols - 1) * PREVIEW_GAP;
-    const previewH = rows * PREVIEW_CELL + (rows - 1) * PREVIEW_GAP;
-    const startX = containerX + Math.floor((TRAY_W - previewW) / 2);
-    const startY = containerY + 42 + Math.floor((TRAY_H - 42 - previewH) / 2);
-
-    if (this.previewWidgets[index].length === 0) {
-      for (let i = 0; i < maxPreviewCells; i += 1) {
-        const tile = button({
-          x: 1000,
-          y: 1000,
-          w: PREVIEW_CELL,
-          h: PREVIEW_CELL,
-          text: "",
-          textSize: 1,
-          color: 0x000000,
-          normalColor: piece.color,
-          pressColor: 0xFFFFFF,
-          radius: 5,
-          onClick: () => this.selectPiece(index),
-        });
-        this.previewWidgets[index].push(tile);
+    if (this.gameOver) {
+      if (inRect(x, y, 79, 246, 232, 58)) {
+        this.startNewGame();
       }
+      return;
     }
 
-    this.previewWidgets[index].forEach((tile, tileIndex) => {
-      if (tileIndex >= cells.length) {
-        tile.setProperty(prop.MORE, {
-          x: 1000,
-          y: 1000,
-        });
+    const trayIndex = this.getTrayIndexAt(x, y);
+
+    if (trayIndex >= 0) {
+      this.selectPiece(trayIndex);
+      return;
+    }
+
+    if (
+      inRect(
+        x,
+        y,
+        BOARD_X,
+        BOARD_Y,
+        BOARD_PX,
+        BOARD_PX
+      )
+    ) {
+      if (this.selectedPiece < 0) {
+        this.setStatus("TAP A BLOCK");
+        vibrateLight();
         return;
       }
 
-      const cell = cells[tileIndex];
-      const r = cell[0];
-      const c = cell[1];
-      const selected = this.selectedPiece === index;
+      const col = Math.floor(
+        (x - BOARD_X) / STRIDE
+      );
 
-      tile.setProperty(prop.MORE, {
-        x: startX + c * (PREVIEW_CELL + PREVIEW_GAP),
-        y: startY + r * (PREVIEW_CELL + PREVIEW_GAP),
-        w: PREVIEW_CELL,
-        h: PREVIEW_CELL,
-        normal_color: selected ? 0xFFFFFF : piece.color,
-        press_color: selected ? ACCENT : 0xFFFFFF,
-        radius: 5,
-      });
-    });
+      const row = Math.floor(
+        (y - BOARD_Y) / STRIDE
+      );
+
+      const cellX = BOARD_X + col * STRIDE;
+      const cellY = BOARD_Y + row * STRIDE;
+
+      // Ignore taps in the 2 px gaps between cells.
+      if (
+        x > cellX + CELL ||
+        y > cellY + CELL
+      ) {
+        return;
+      }
+
+      this.placeSelectedPiece(row, col);
+    }
+  },
+
+  getTrayIndexAt(x, y) {
+    if (y < TRAY_Y || y >= TRAY_Y + TRAY_H) {
+      return -1;
+    }
+
+    for (let i = 0; i < 3; i += 1) {
+      if (
+        inRect(
+          x,
+          y,
+          TRAY_X[i],
+          TRAY_Y,
+          TRAY_W,
+          TRAY_H
+        )
+      ) {
+        return i;
+      }
+    }
+
+    return -1;
   },
 
   selectPiece(index) {
-    if (this.busy || !this.pieces[index]) return;
+    if (!this.pieces[index]) {
+      return;
+    }
 
     if (this.selectedPiece === index) {
       this.selectedPiece = -1;
-    } else {
-      this.selectedPiece = index;
+      this.setStatus("TAP A BLOCK");
+      this.redraw();
+      return;
     }
 
-    this.updatePieceSelection();
-    this.setStatus(
-      this.selectedPiece === -1 ? "TAP A BLOCK" : "TAP A GRID SPACE"
-    );
+    this.selectedPiece = index;
+    this.setStatus("TAP A GRID SPACE");
+    vibrateLight();
+    this.redraw();
   },
 
-  updatePieceSelection() {
-    for (let index = 0; index < 3; index += 1) {
-      const selected = this.selectedPiece === index;
-      const piece = this.pieces[index];
-      if (!piece) continue;
-
-      this.previewWidgets[index].forEach((widgetItem) => {
-        widgetItem.setProperty(prop.MORE, {
-          normal_color: selected ? 0xFFFFFF : piece.color,
-          press_color: selected ? ACCENT : 0xFFFFFF,
-        });
-      });
-    }
-  },
-
-  onBoardTap(row, col) {
-    if (this.busy || this.selectedPiece < 0) return;
-
+  placeSelectedPiece(row, col) {
     const piece = this.pieces[this.selectedPiece];
-    if (!piece) return;
+
+    if (!piece) {
+      this.selectedPiece = -1;
+      return;
+    }
 
     if (!this.canPlace(piece, row, col)) {
-      const index = row * BOARD_SIZE + col;
-      shake(this.boardWidgets[index], { duration: 180 });
-      vibrateLight();
       this.setStatus("NO ROOM HERE");
+      vibrateLight();
       return;
     }
 
-    this.busy = true;
-    const placedCells = this.placePiece(piece, row, col);
-    const usedIndex = this.selectedPiece;
-    this.selectedPiece = -1;
-    this.pieces[usedIndex] = randomPiece();
+    this.locked = true;
 
-    this.score += placedCells.length;
+    for (const [dr, dc] of piece.cells) {
+      this.board[row + dr][col + dc] = piece.color;
+    }
+
+    this.score += piece.cells.length;
+
+    const usedIndex = this.selectedPiece;
+    this.pieces[usedIndex] = null;
+    this.selectedPiece = -1;
+    this.usedPieces += 1;
+
     vibrateLight();
     this.playPlaceSound();
-    this.updateScore();
-    this.updateBoard();
 
-    placedCells.forEach(({ row: r, col: c }) => {
-      const index = r * BOARD_SIZE + c;
-      popIn(
-        this.boardWidgets[index],
-        BOARD_X + c * STRIDE,
-        BOARD_Y + r * STRIDE,
-        CELL,
-        CELL,
-        { duration: 140, scale: 0.75 }
-      );
-    });
-    this.updatePieceSelection();
-    this.renderPiecePreview(usedIndex);
-    this.setStatus("KEEP GOING");
+    const clearInfo = this.getCompletedLines();
 
-    const clearData = this.getCompletedLines();
-    if (clearData.cells.length === 0) {
-      this.busy = false;
-      if (this.noMovesLeft()) this.endGame();
-      return;
+    for (const [clearRow, clearCol] of clearInfo.cells) {
+      this.board[clearRow][clearCol] = null;
     }
 
-    const lineCount = clearData.rows.length + clearData.cols.length;
-    this.score += lineCount * 10 + Math.max(0, lineCount - 1) * 5;
+    if (clearInfo.lineCount > 0) {
+      const lineBonus =
+        clearInfo.lineCount * 10 +
+        Math.max(0, clearInfo.lineCount - 1) * 5;
+
+      this.score += lineBonus;
+
+      vibrateStrong();
+      this.playClearSound();
+      this.setStatus(
+        clearInfo.lineCount +
+        " LINE" +
+        (clearInfo.lineCount === 1 ? "" : "S") +
+        " CLEARED"
+      );
+    } else {
+      this.setStatus("KEEP GOING");
+    }
+
     if (this.score > this.best) {
       this.best = this.score;
-      setNumber("blockblast_best", this.best);
-      this.bestPill.setText("BEST " + this.best);
+      setNumber(
+        "blockblast_best",
+        this.best
+      );
     }
-    this.updateScore();
-    vibrateStrong();
-    this.playClearSound();
-    this.setStatus(lineCount + " LINE" + (lineCount === 1 ? "" : "S") + " CLEARED");
 
-    clearData.cells.forEach(([r, c]) => {
-      const index = r * BOARD_SIZE + c;
-      fadeOut(this.boardWidgets[index], {
-        duration: 150,
-      });
-    });
+    this.updateScoreText();
+    this.redraw();
 
-    setTimeout(() => {
-      clearData.cells.forEach(([r, c]) => {
-        this.board[r][c] = null;
-      });
-      this.updateBoard();
-      clearData.cells.forEach(([r, c]) => {
-        const index = r * BOARD_SIZE + c;
-        fadeIn(this.boardWidgets[index], { duration: 120 });
-      });
-      this.busy = false;
-      if (this.noMovesLeft()) this.endGame();
-    }, 170);
+    // IMPORTANT:
+    // Pieces are NOT replaced individually.
+    // The three slots are consumed one by one and only
+    // refill after all three have been played.
+    if (this.usedPieces === 3) {
+      this.pieces = [
+        randomPiece(),
+        randomPiece(),
+        randomPiece(),
+      ];
+      this.usedPieces = 0;
+
+      if (!this.hasAnyMove()) {
+        this.endGame();
+      }
+    } else if (!this.hasAnyMove()) {
+      // When some slots remain, only those remaining pieces
+      // matter for continuing the current set.
+      if (
+        this.pieces.some(
+          (remainingPiece) =>
+            remainingPiece &&
+            this.pieceHasMove(remainingPiece)
+        ) === false
+      ) {
+        this.endGame();
+      }
+    }
+
+    this.locked = false;
+    this.updateScoreText();
+    this.redraw();
   },
 
   canPlace(piece, row, col) {
     return piece.cells.every(([dr, dc]) => {
-      const r = row + dr;
-      const c = col + dc;
+      const targetRow = row + dr;
+      const targetCol = col + dc;
+
       return (
-        r >= 0 &&
-        r < BOARD_SIZE &&
-        c >= 0 &&
-        c < BOARD_SIZE &&
-        !this.board[r][c]
+        targetRow >= 0 &&
+        targetRow < BOARD_SIZE &&
+        targetCol >= 0 &&
+        targetCol < BOARD_SIZE &&
+        !this.board[targetRow][targetCol]
       );
     });
   },
 
-  placePiece(piece, row, col) {
-    const placedCells = [];
-    piece.cells.forEach(([dr, dc]) => {
-      const r = row + dr;
-      const c = col + dc;
-      this.board[r][c] = piece.color;
-      placedCells.push({ row: r, col: c });
-    });
-    return placedCells;
+  pieceHasMove(piece) {
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        if (this.canPlace(piece, row, col)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  },
+
+  hasAnyMove() {
+    return this.pieces.some(
+      (piece) =>
+        piece &&
+        this.pieceHasMove(piece)
+    );
   },
 
   getCompletedLines() {
     const rows = [];
     const cols = [];
-    const cellSet = new Set();
+    const cellSet = Object.create(null);
 
     for (let row = 0; row < BOARD_SIZE; row += 1) {
-      if (this.board[row].every(Boolean)) rows.push(row);
+      let full = true;
+
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        if (!this.board[row][col]) {
+          full = false;
+          break;
+        }
+      }
+
+      if (full) {
+        rows.push(row);
+      }
     }
 
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       let full = true;
+
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         if (!this.board[row][col]) {
           full = false;
           break;
         }
       }
-      if (full) cols.push(col);
+
+      if (full) {
+        cols.push(col);
+      }
     }
 
-    rows.forEach((row) => {
+    for (const row of rows) {
       for (let col = 0; col < BOARD_SIZE; col += 1) {
-        cellSet.add(key(row, col));
+        cellSet[row + ":" + col] = true;
       }
-    });
+    }
 
-    cols.forEach((col) => {
+    for (const col of cols) {
       for (let row = 0; row < BOARD_SIZE; row += 1) {
-        cellSet.add(key(row, col));
+        cellSet[row + ":" + col] = true;
       }
+    }
+
+    const cells = Object.keys(cellSet).map((entry) => {
+      const parts = entry.split(":");
+
+      return [
+        Number(parts[0]),
+        Number(parts[1]),
+      ];
     });
 
-    const cells = Array.from(cellSet).map((value) => {
-      const parts = value.split(":");
-      const row = Number(parts[0]);
-      const col = Number(parts[1]);
-      return [row, col];
-    });
-
-    return { rows, cols, cells };
-  },
-
-  noMovesLeft() {
-    return this.pieces.every((piece) => {
-      if (!piece) return true;
-      for (let row = 0; row < BOARD_SIZE; row += 1) {
-        for (let col = 0; col < BOARD_SIZE; col += 1) {
-          if (this.canPlace(piece, row, col)) return false;
-        }
-      }
-      return true;
-    });
+    return {
+      rows,
+      cols,
+      cells,
+      lineCount:
+        rows.length + cols.length,
+    };
   },
 
   endGame() {
+    this.gameOver = true;
+    this.setStatus("NO MORE MOVES");
+    vibrateStrong();
+
     if (this.score > this.best) {
       this.best = this.score;
-      setNumber("blockblast_best", this.best);
-      this.bestPill.setText("BEST " + this.best);
+      setNumber(
+        "blockblast_best",
+        this.best
+      );
     }
-    this.showOverlay();
-    this.setStatus("NO MORE MOVES");
+
+    this.updateScoreText();
+    this.redraw();
   },
 
-  updateBoard() {
-    for (let row = 0; row < BOARD_SIZE; row += 1) {
-      for (let col = 0; col < BOARD_SIZE; col += 1) {
-        const index = row * BOARD_SIZE + col;
-        const value = this.board[row][col];
-        this.boardWidgets[index].setProperty(prop.MORE, {
-          x: BOARD_X + col * STRIDE,
-          y: BOARD_Y + row * STRIDE,
-          w: CELL,
-          h: CELL,
-          normal_color: value || EMPTY,
-          press_color: value || EMPTY_PRESSED,
-          radius: 8,
-        });
+  updateScoreText() {
+    this.scoreText.setProperty(
+      12,
+      {
+        text: String(this.score),
       }
-    }
-  },
+    );
 
-  updateScore() {
-    this.scoreText.setProperty(prop.MORE, {
-      text: String(this.score),
-    });
-    this.bestPill.setText("BEST " + this.best);
-  },
-
-  updateAll() {
-    this.updateBoard();
-    this.updateScore();
-    this.updatePieceSelection();
-    for (let i = 0; i < 3; i += 1) {
-      this.renderPiecePreview(i);
-    }
+    this.bestPill.setText(
+      "BEST " + this.best
+    );
   },
 
   setStatus(value) {
-    this.statusText.setProperty(prop.MORE, {
-      text: value,
-    });
+    this.status = value;
+
+    if (this.statusText) {
+      this.statusText.setProperty(
+        12,
+        {
+          text: String(value),
+        }
+      );
+    }
   },
 
   playPlaceSound() {
-    if (this.soundTypes && this.soundTypes.REGULAR !== undefined) {
-      playSystemSound(this.soundTypes.REGULAR, 0, this.systemSounds);
+    if (
+      this.soundTypes &&
+      this.soundTypes.REGULAR !== undefined
+    ) {
+      playSystemSound(
+        this.soundTypes.REGULAR,
+        0,
+        this.systemSounds
+      );
     }
   },
 
   playClearSound() {
-    if (this.soundTypes && this.soundTypes.ACHIEVE !== undefined) {
-      playSystemSound(this.soundTypes.ACHIEVE, 0, this.systemSounds);
+    if (
+      this.soundTypes &&
+      this.soundTypes.ACHIEVE !== undefined
+    ) {
+      playSystemSound(
+        this.soundTypes.ACHIEVE,
+        0,
+        this.systemSounds
+      );
     }
+  },
+
+  drawBlock(x, y, size, color) {
+    this.canvas.drawRect({
+      x1: x,
+      y1: y,
+      x2: x + size,
+      y2: y + size,
+      color,
+    });
+  },
+
+  drawTextCentered(value, centerX, y, size, color) {
+    const stringValue = String(value);
+    const width = stringValue.length * size * 0.54;
+
+    this.canvas.drawText({
+      x: Math.floor(centerX - width / 2),
+      y,
+      text: stringValue,
+      text_size: size,
+      color,
+    });
+  },
+
+  drawBoard() {
+    this.canvas.setPaint({
+      color: GRID_FRAME,
+      line_width: 1,
+    });
+
+    this.canvas.drawRect({
+      x1: BOARD_X - 5,
+      y1: BOARD_Y - 5,
+      x2: BOARD_X + BOARD_PX + 5,
+      y2: BOARD_Y + BOARD_PX + 5,
+      color: GRID_FRAME,
+    });
+
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        const x = BOARD_X + col * STRIDE;
+        const y = BOARD_Y + row * STRIDE;
+        const value = this.board[row][col];
+
+        this.drawBlock(
+          x,
+          y,
+          CELL,
+          value || EMPTY
+        );
+      }
+    }
+  },
+
+  drawTray() {
+    for (let index = 0; index < 3; index += 1) {
+      const x = TRAY_X[index];
+      const y = TRAY_Y;
+      const selected =
+        this.selectedPiece === index;
+
+      this.canvas.drawRect({
+        x1: x,
+        y1: y,
+        x2: x + TRAY_W,
+        y2: y + TRAY_H,
+        color: TRAY_FILL,
+      });
+
+      this.canvas.setPaint({
+        color: selected
+          ? TRAY_SELECTED
+          : TRAY_BORDER,
+        line_width: selected ? 3 : 2,
+      });
+
+      this.canvas.strokeRect({
+        x1: x + 1,
+        y1: y + 1,
+        x2: x + TRAY_W - 1,
+        y2: y + TRAY_H - 1,
+      });
+
+      const piece = this.pieces[index];
+
+      if (!piece) {
+        this.drawTextCentered(
+          "✓",
+          x + TRAY_W / 2,
+          y + 39,
+          22,
+          MUTED
+        );
+        continue;
+      }
+
+      const cells = piece.cells;
+
+      let maxRow = 0;
+      let maxCol = 0;
+
+      for (const [row, col] of cells) {
+        if (row > maxRow) maxRow = row;
+        if (col > maxCol) maxCol = col;
+      }
+
+      const rows = maxRow + 1;
+      const cols = maxCol + 1;
+
+      const previewW =
+        cols * PREVIEW_CELL +
+        (cols - 1) * PREVIEW_GAP;
+
+      const previewH =
+        rows * PREVIEW_CELL +
+        (rows - 1) * PREVIEW_GAP;
+
+      const startX =
+        Math.floor(
+          x +
+          (TRAY_W - previewW) / 2
+        );
+
+      const startY =
+        Math.floor(
+          y +
+          (TRAY_H - previewH) / 2
+        );
+
+      for (const [row, col] of cells) {
+        this.drawBlock(
+          startX +
+            col *
+              (PREVIEW_CELL + PREVIEW_GAP),
+          startY +
+            row *
+              (PREVIEW_CELL + PREVIEW_GAP),
+          PREVIEW_CELL,
+          selected
+            ? TEXT
+            : piece.color
+        );
+      }
+    }
+  },
+
+  drawStatus() {
+    const status =
+      this.status ||
+      (
+        this.selectedPiece >= 0
+          ? "TAP A GRID SPACE"
+          : "TAP A BLOCK"
+      );
+
+    this.drawTextCentered(
+      status,
+      WIDTH / 2,
+      318,
+      13,
+      MUTED
+    );
+  },
+
+  drawGameOver() {
+    if (!this.gameOver) return;
+
+    this.canvas.drawRect({
+      x1: 24,
+      y1: 90,
+      x2: WIDTH - 24,
+      y2: 310,
+      color: OVERLAY,
+    });
+
+    this.canvas.drawRect({
+      x1: 51,
+      y1: 90,
+      x2: WIDTH - 51,
+      y2: 96,
+      color: ACCENT,
+    });
+
+    this.drawTextCentered(
+      "GAME OVER",
+      WIDTH / 2,
+      132,
+      29,
+      TEXT
+    );
+
+    this.drawTextCentered(
+      "SCORE " + this.score,
+      WIDTH / 2,
+      178,
+      19,
+      ACCENT
+    );
+
+    this.drawTextCentered(
+      "BEST " + this.best,
+      WIDTH / 2,
+      205,
+      16,
+      MUTED
+    );
+
+    this.canvas.drawRect({
+      x1: 79,
+      y1: 246,
+      x2: 311,
+      y2: 304,
+      color: ACCENT,
+    });
+
+    this.drawTextCentered(
+      "PLAY AGAIN",
+      WIDTH / 2,
+      263,
+      18,
+      0x000000
+    );
+  },
+
+  redraw() {
+    if (!this.canvas) return;
+
+    this.canvas.clear({
+      x: 0,
+      y: 0,
+      w: WIDTH,
+      h: HEIGHT,
+    });
+
+    this.drawBoard();
+    this.drawTray();
+    this.drawStatus();
+    this.drawGameOver();
   },
 });
