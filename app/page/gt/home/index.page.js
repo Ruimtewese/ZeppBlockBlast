@@ -162,15 +162,6 @@ Page({
 
     this.hoverCell = null;
 
-    this.animationTimer = null;
-
-    this.systemSounds =
-      createSystemSounds();
-
-    this.soundTypes =
-      getSystemSoundTypes(
-        this.systemSounds
-      );
   },
 
   build() {
@@ -1090,14 +1081,6 @@ Page({
       14
     );
 
-    const hidden =
-      this.animation &&
-      this.animation.type ===
-        "place"
-        ? this.animation
-            .cells
-        : null;
-
     for (
       let row = 0;
       row < BOARD_SIZE;
@@ -1108,30 +1091,7 @@ Page({
         col < BOARD_SIZE;
         col += 1
       ) {
-        const isHidden =
-          hidden &&
-          hidden.some(
-            (cell) =>
-              cell.row === row &&
-              cell.col === col
-          );
 
-        if (
-          isHidden
-        ) {
-          this.drawRoundedBlock(
-            BOARD_X +
-              col *
-                STRIDE,
-            BOARD_Y +
-              row *
-                STRIDE,
-            CELL,
-            EMPTY,
-            1
-          );
-          continue;
-        }
 
         this.drawRoundedBlock(
           BOARD_X +
@@ -1365,24 +1325,6 @@ Page({
         );
 
       let scale = 1;
-
-      if (
-        this.animation &&
-        this.animation.type ===
-          "refill"
-      ) {
-        const progress =
-          this.getAnimationProgress(
-            this.animation
-          );
-
-        scale =
-          0.45 +
-          0.55 *
-            this.easeOutBack(
-              progress
-            );
-      }
 
       if (
         selected &&
