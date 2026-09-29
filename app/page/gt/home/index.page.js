@@ -380,6 +380,7 @@ Page({
     const containerY = TRAY_Y;
     const piece = this.pieces[index];
     const cells = piece.cells;
+    const maxPreviewCells = 9;
 
     const maxRow = Math.max(...cells.map(([r]) => r));
     const maxCol = Math.max(...cells.map(([, c]) => c));
@@ -390,27 +391,48 @@ Page({
     const startX = containerX + Math.floor((TRAY_W - previewW) / 2);
     const startY = containerY + 42 + Math.floor((TRAY_H - 42 - previewH) / 2);
 
-    this.previewWidgets[index] ??= [];
-    this.previewWidgets[index].forEach((oldWidget) => {
-      oldWidget.setProperty(prop.MORE, { x: 1000, y: 1000 });
-    });
-    this.previewWidgets[index] = [];
+    if (this.previewWidgets[index].length === 0) {
+      for (let i = 0; i < maxPreviewCells; i += 1) {
+        const tile = button({
+          x: 1000,
+          y: 1000,
+          w: PREVIEW_CELL,
+          h: PREVIEW_CELL,
+          text: "",
+          textSize: 1,
+          color: 0x000000,
+          normalColor: piece.color,
+          pressColor: 0xFFFFFF,
+          radius: 5,
+          onClick: () => this.selectPiece(index),
+        });
+        this.previewWidgets[index].push(tile);
+      }
+    }
 
-    cells.forEach(([r, c]) => {
-      const tile = button({
+    this.previewWidgets[index].forEach((tile, tileIndex) => {
+      if (tileIndex >= cells.length) {
+        tile.setProperty(prop.MORE, {
+          x: 1000,
+          y: 1000,
+        });
+        return;
+      }
+
+      const cell = cells[tileIndex];
+      const r = cell[0];
+      const c = cell[1];
+      const selected = this.selectedPiece === index;
+
+      tile.setProperty(prop.MORE, {
         x: startX + c * (PREVIEW_CELL + PREVIEW_GAP),
         y: startY + r * (PREVIEW_CELL + PREVIEW_GAP),
         w: PREVIEW_CELL,
         h: PREVIEW_CELL,
-        text: "",
-        textSize: 1,
-        color: 0x000000,
-        normalColor: piece.color,
-        pressColor: 0xFFFFFF,
+        normal_color: selected ? 0xFFFFFF : piece.color,
+        press_color: selected ? ACCENT : 0xFFFFFF,
         radius: 5,
-        onClick: () => this.selectPiece(index),
       });
-      this.previewWidgets[index].push(tile);
     });
   },
 
