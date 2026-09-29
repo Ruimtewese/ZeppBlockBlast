@@ -216,29 +216,6 @@ Page({
       }
     );
 
-    // Dedicated transparent hit areas make the three piece
-    // slots reliable on-device while the game remains rendered
-    // by one lightweight Canvas.
-    this.pieceHitTargets = [];
-
-    for (let index = 0; index < 3; index += 1) {
-      const hitTarget = createWidget(widget.FILL_RECT, {
-        x: TRAY_X[index],
-        y: TRAY_Y,
-        w: TRAY_W,
-        h: TRAY_H,
-        color: 0x000000,
-        alpha: 0,
-      });
-
-      hitTarget.addEventListener(
-        event.CLICK_UP,
-        () => this.selectPiece(index)
-      );
-
-      this.pieceHitTargets.push(hitTarget);
-    }
-
     this.createHeader();
     this.createNewButton();
 
@@ -374,11 +351,12 @@ Page({
   },
 
   startNewGame() {
-    this.locked = true;
+    this.locked = false;
     this.gameOver = false;
     this.selectedPiece = -1;
     this.hoverCell = null;
     this.usedPieces = 0;
+    this.animation = null;
 
     this.board =
       this.makeEmptyBoard();
@@ -393,17 +371,9 @@ Page({
 
     this.updateScoreText();
     this.setStatus(
-      "NEW GAME"
+      "TAP A BLOCK"
     );
-
-    this.animation = {
-      type: "reset",
-      start:
-        Date.now(),
-      duration: 240,
-    };
-
-    this.startAnimationLoop();
+    this.redraw();
   },
 
   onCanvasDown(x, y) {
@@ -436,7 +406,6 @@ Page({
 
     if (cell) {
       this.hoverCell = cell;
-      this.startAnimationLoop();
       this.redraw();
     }
   },
@@ -464,6 +433,24 @@ Page({
         this.startNewGame();
       }
       return;
+    }
+
+    // Handle tray selection directly on the Canvas.
+    // This avoids invisible overlay widgets intercepting touch events.
+    for (let index = 0; index < 3; index += 1) {
+      if (
+        inRect(
+          x,
+          y,
+          TRAY_X[index],
+          TRAY_Y,
+          TRAY_W,
+          TRAY_H
+        )
+      ) {
+        this.selectPiece(index);
+        return;
+      }
     }
 
     if (
@@ -589,8 +576,6 @@ Page({
     );
 
     vibrateLight();
-
-    this.startAnimationLoop();
     this.redraw();
   },
 
@@ -608,7 +593,7 @@ Page({
       return;
     }
 
-    // row/col is the origin of [0,0].
+    // row/col is the exact origin of [0,0].
     if (
       !this.canPlace(
         piece,
@@ -621,34 +606,17 @@ Page({
       );
 
       vibrateLight();
-      this.redraw();
-
       return;
     }
 
     this.locked = true;
 
-    const placedCells = [];
-
     for (
       const [dr, dc]
       of piece.cells
     ) {
-      const targetRow =
-        row + dr;
-
-      const targetCol =
-        col + dc;
-
-      this.board[targetRow][
-        targetCol
-      ] = piece.color;
-
-      placedCells.push({
-        row: targetRow,
-        col: targetCol,
-        color: piece.color,
-      });
+      this.board[row + dr][col + dc] =
+        piece.color;
     }
 
     this.score +=
@@ -667,60 +635,42 @@ Page({
     const clearInfo =
       this.getCompletedLines();
 
-    clearInfo.colors =
-      clearInfo.cells.map(
-        ([clearRow, clearCol]) => ({
-          row: clearRow,
-          col: clearCol,
-          color:
-            this.board[
-              clearRow
-            ][clearCol],
-        })
-      );
-
-    for (
-      const [
-        clearRow,
-        clearCol
-      ]
-      of clearInfo.cells
-    ) {
-      this.board[
-        clearRow
-      ][
-        clearCol
-      ] = null;
-    }
-
     if (
-      clearInfo.lineCount >
-      0
+      clearInfo.lineCount > 0
     ) {
       const lineBonus =
         clearInfo.lineCount *
           10 +
         Math.max(
           0,
-          clearInfo.lineCount -
-            1
+          clearInfo.lineCount - 1
         ) *
           5;
 
       this.score +=
         lineBonus;
 
+      for (
+        const [clearRow, clearCol]
+        of clearInfo.cells
+      ) {
+        this.board[clearRow][clearCol] =
+          null;
+      }
+
       this.setStatus(
         clearInfo.lineCount +
         " LINE" +
         (
-          clearInfo.lineCount ===
-          1
+          clearInfo.lineCount === 1
             ? ""
             : "S"
         ) +
         " CLEARED"
       );
+
+      vibrateStrong();
+      this.playClearSound();
     } else {
       this.setStatus(
         "KEEP GOING"
@@ -742,16 +692,33 @@ Page({
 
     this.updateScoreText();
 
-    this.animation = {
-      type: "place",
-      start:
-        Date.now(),
-      duration: 170,
-      cells: placedCells,
-      clearInfo,
-    };
+    // Replace all three pieces only after the third piece is used.
+    if (
+      this.usedPieces === 3
+    ) {
+      this.pieces = [
+        randomPiece(),
+        randomPiece(),
+        randomPiece(),
+      ];
 
-    this.startAnimationLoop();
+      this.usedPieces = 0;
+      this.setStatus(
+        "NEW BLOCKS"
+      );
+    }
+
+    // Check the next available pieces immediately.
+    if (
+      !this.hasAnyMove()
+    ) {
+      this.endGame();
+      return;
+    }
+
+    this.locked = false;
+    this.hoverCell = null;
+    this.redraw();
   },
 
   finishTurn(animation) {
@@ -1064,6 +1031,9 @@ Page({
     color,
     scale = 1
   ) {
+    // Fast path: one Canvas draw per block.
+    // The grid gap provides the visual separation instead of
+    // multiple circle calls for rounded corners.
     const safeScale =
       Math.max(
         0,
@@ -1073,14 +1043,14 @@ Page({
         )
       );
 
-    const scaledSize =
-      size * safeScale;
-
     if (
-      scaledSize <= 0
+      safeScale <= 0
     ) {
       return;
     }
+
+    const scaledSize =
+      size * safeScale;
 
     const drawX =
       x +
@@ -1094,105 +1064,15 @@ Page({
         scaledSize) /
         2;
 
-    const radius =
-      Math.min(
-        BLOCK_RADIUS,
-        scaledSize / 2
-      );
-
-    if (
-      radius < 1
-    ) {
-      this.canvas.drawRect({
-        x1: drawX,
-        y1: drawY,
-        x2:
-          drawX +
-          scaledSize,
-        y2:
-          drawY +
-          scaledSize,
-        color,
-      });
-
-      return;
-    }
-
     this.canvas.drawRect({
-      x1:
-        drawX +
-        radius,
+      x1: drawX,
       y1: drawY,
       x2:
         drawX +
-        scaledSize -
-        radius,
-      y2:
-        drawY +
-        scaledSize,
-      color,
-    });
-
-    this.canvas.drawRect({
-      x1: drawX,
-      y1:
-        drawY +
-        radius,
-      x2:
-        drawX +
         scaledSize,
       y2:
         drawY +
-        scaledSize -
-        radius,
-      color,
-    });
-
-    this.canvas.drawCircle({
-      center_x:
-        drawX +
-        radius,
-      center_y:
-        drawY +
-        radius,
-      radius,
-      color,
-    });
-
-    this.canvas.drawCircle({
-      center_x:
-        drawX +
-        scaledSize -
-        radius,
-      center_y:
-        drawY +
-        radius,
-      radius,
-      color,
-    });
-
-    this.canvas.drawCircle({
-      center_x:
-        drawX +
-        radius,
-      center_y:
-        drawY +
-        scaledSize -
-        radius,
-      radius,
-      color,
-    });
-
-    this.canvas.drawCircle({
-      center_x:
-        drawX +
-        scaledSize -
-        radius,
-      center_y:
-        drawY +
-        scaledSize -
-        radius,
-      radius,
+        scaledSize,
       color,
     });
   },
@@ -1977,7 +1857,6 @@ Page({
     this.drawGhost();
     this.drawTray();
     this.drawStatus();
-    this.drawAnimationOverlay();
     this.drawGameOver();
   },
 
