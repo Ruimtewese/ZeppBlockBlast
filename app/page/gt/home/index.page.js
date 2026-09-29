@@ -8,9 +8,6 @@ import {
   setNumber,
   vibrateLight,
   vibrateStrong,
-  createSystemSounds,
-  getSystemSoundTypes,
-  playSystemSound,
   onBackKey,
   offKeyPress,
   exitApp,
@@ -165,7 +162,6 @@ Page({
 
     this.hoverCell = null;
 
-    this.animation = null;
     this.animationTimer = null;
 
     this.systemSounds =
@@ -229,15 +225,6 @@ Page({
   onDestroy() {
     offKeyPress();
 
-    if (
-      this.animationTimer
-    ) {
-      clearInterval(
-        this.animationTimer
-      );
-
-      this.animationTimer = null;
-    }
   },
 
   makeEmptyBoard() {
@@ -356,7 +343,6 @@ Page({
     this.selectedPiece = -1;
     this.hoverCell = null;
     this.usedPieces = 0;
-    this.animation = null;
 
     this.board =
       this.makeEmptyBoard();
@@ -630,8 +616,6 @@ Page({
     this.usedPieces += 1;
 
     vibrateLight();
-    this.playPlaceSound();
-
     const clearInfo =
       this.getCompletedLines();
 
@@ -670,7 +654,6 @@ Page({
       );
 
       vibrateStrong();
-      this.playClearSound();
     } else {
       this.setStatus(
         "KEEP GOING"
@@ -718,95 +701,6 @@ Page({
 
     this.locked = false;
     this.hoverCell = null;
-    this.redraw();
-  },
-
-  finishTurn(animation) {
-    if (
-      animation.clearInfo &&
-      animation.clearInfo.lineCount >
-        0
-    ) {
-      this.animation = {
-        type: "clear",
-        start:
-          Date.now(),
-        duration: 180,
-        cells:
-          animation
-            .clearInfo
-            .colors,
-      };
-
-      vibrateStrong();
-      this.playClearSound();
-      this.startAnimationLoop();
-
-      return;
-    }
-
-    this.finishTurnAfterClear();
-  },
-
-  finishTurnAfterClear() {
-    if (
-      this.usedPieces ===
-      3
-    ) {
-      this.pieces = [
-        randomPiece(),
-        randomPiece(),
-        randomPiece(),
-      ];
-
-      this.usedPieces = 0;
-
-      this.animation = {
-        type: "refill",
-        start:
-          Date.now(),
-        duration: 220,
-      };
-
-      this.setStatus(
-        "NEW BLOCKS"
-      );
-
-      if (
-        !this.hasAnyMove()
-      ) {
-        this.gameOver = true;
-        this.setStatus(
-          "NO MORE MOVES"
-        );
-      }
-
-      this.startAnimationLoop();
-
-      return;
-    }
-
-    if (
-      !this.hasAnyMove()
-    ) {
-      this.endGame();
-      return;
-    }
-
-    this.locked = false;
-    this.stopAnimationLoopIfIdle();
-    this.redraw();
-  },
-
-  endGame() {
-    this.gameOver = true;
-    this.locked = false;
-    this.setStatus(
-      "NO MORE MOVES"
-    );
-
-    vibrateStrong();
-    this.stopAnimationLoopIfIdle();
     this.redraw();
   },
 
@@ -1579,197 +1473,6 @@ Page({
     );
   },
 
-  drawAnimationOverlay() {
-    if (
-      !this.animation
-    ) {
-      return;
-    }
-
-    const animation =
-      this.animation;
-
-    const progress =
-      this.getAnimationProgress(
-        animation
-      );
-
-    if (
-      animation.type ===
-      "place"
-    ) {
-      const scale =
-        0.35 +
-        0.65 *
-          this.easeOutBack(
-            progress
-          );
-
-      for (
-        const cell
-        of animation.cells
-      ) {
-        this.drawRoundedBlock(
-          BOARD_X +
-            cell.col *
-              STRIDE,
-          BOARD_Y +
-            cell.row *
-              STRIDE,
-          CELL,
-          cell.color,
-          scale
-        );
-      }
-
-      return;
-    }
-
-    if (
-      animation.type ===
-      "clear"
-    ) {
-      const scale =
-        1 -
-        this.easeInCubic(
-          progress
-        );
-
-      for (
-        const cell
-        of animation.cells
-      ) {
-        this.drawRoundedBlock(
-          BOARD_X +
-            cell.col *
-              STRIDE,
-          BOARD_Y +
-            cell.row *
-              STRIDE,
-          CELL,
-          cell.color,
-          scale
-        );
-      }
-
-      return;
-    }
-
-    if (
-      animation.type ===
-      "reset"
-    ) {
-      const scale =
-        this.easeOutCubic(
-          progress
-        );
-
-      for (
-        let index = 0;
-        index < 3;
-        index += 1
-      ) {
-        const piece =
-          this.pieces[index];
-
-        if (!piece) {
-          continue;
-        }
-
-        this.drawPiecePreviewAtScale(
-          piece,
-          index,
-          scale
-        );
-      }
-    }
-  },
-
-  drawPiecePreviewAtScale(
-    piece,
-    index,
-    scale
-  ) {
-    const x =
-      TRAY_X[index];
-    const y =
-      TRAY_Y;
-
-    const maxRow =
-      Math.max(
-        ...piece.cells.map(
-          ([row]) => row
-        )
-      );
-
-    const maxCol =
-      Math.max(
-        ...piece.cells.map(
-          ([, col]) => col
-        )
-      );
-
-    const rows =
-      maxRow + 1;
-    const cols =
-      maxCol + 1;
-
-    const previewW =
-      cols *
-        PREVIEW_CELL +
-      (cols - 1) *
-        PREVIEW_GAP;
-
-    const previewH =
-      rows *
-        PREVIEW_CELL +
-      (rows - 1) *
-        PREVIEW_GAP;
-
-    const startX =
-      Math.floor(
-        x +
-          (
-            TRAY_W -
-            previewW
-          ) /
-            2
-      );
-
-    const startY =
-      Math.floor(
-        y +
-          (
-            TRAY_H -
-            previewH
-          ) /
-            2
-      );
-
-    for (
-      const [row, col]
-      of piece.cells
-    ) {
-      this.drawRoundedBlock(
-        startX +
-          col *
-            (
-              PREVIEW_CELL +
-              PREVIEW_GAP
-            ),
-        startY +
-          row *
-            (
-              PREVIEW_CELL +
-              PREVIEW_GAP
-            ),
-        PREVIEW_CELL,
-        piece.color,
-        scale
-      );
-    }
-  },
-
   drawGameOver() {
     if (
       !this.gameOver
@@ -1858,127 +1561,6 @@ Page({
     this.drawTray();
     this.drawStatus();
     this.drawGameOver();
-  },
-
-  getAnimationProgress(
-    animation
-  ) {
-    return Math.max(
-      0,
-      Math.min(
-        1,
-        (
-          Date.now() -
-          animation.start
-        ) /
-          animation.duration
-      )
-    );
-  },
-
-  startAnimationLoop() {
-    if (
-      this.animationTimer
-    ) {
-      return;
-    }
-
-    this.animationTimer =
-      setInterval(
-        () => {
-          this.redraw();
-
-          if (
-            this.animation
-          ) {
-            const progress =
-              this.getAnimationProgress(
-                this.animation
-              );
-
-            if (
-              progress >= 1
-            ) {
-              const finished =
-                this.animation;
-
-              this.animation = null;
-
-              if (
-                finished.type ===
-                "place"
-              ) {
-                this.finishTurn(
-                  finished
-                );
-              } else if (
-                finished.type ===
-                "clear"
-              ) {
-                this.finishTurnAfterClear();
-              } else if (
-                finished.type ===
-                "refill"
-              ) {
-                this.locked =
-                  false;
-
-                this.setStatus(
-                  this.gameOver
-                    ? "NO MORE MOVES"
-                    : "TAP A BLOCK"
-                );
-
-                this.stopAnimationLoopIfIdle();
-                this.redraw();
-              } else if (
-                finished.type ===
-                "reset"
-              ) {
-                this.locked =
-                  false;
-
-                this.setStatus(
-                  "TAP A BLOCK"
-                );
-
-                this.stopAnimationLoopIfIdle();
-                this.redraw();
-              }
-            }
-          }
-
-          if (
-            !this.animation &&
-            this.selectedPiece <
-              0
-          ) {
-            this.stopAnimationLoopIfIdle();
-          }
-        },
-        20
-      );
-  },
-
-  stopAnimationLoopIfIdle() {
-    if (
-      this.animation ||
-      this.selectedPiece >=
-        0
-    ) {
-      return;
-    }
-
-    if (
-      this.animationTimer
-    ) {
-      clearInterval(
-        this.animationTimer
-      );
-
-      this.animationTimer =
-        null;
-    }
   },
 
   easeOutCubic(t) {
