@@ -161,7 +161,8 @@ Page({
     this.status = "TAP A BLOCK";
 
     this.hoverCell = null;
-
+    this.placementAnimation = null;
+    this.placementAnimationTimer = null;
   },
 
   build() {
@@ -216,6 +217,10 @@ Page({
   onDestroy() {
     offKeyPress();
 
+    if (this.placementAnimationTimer) {
+      clearTimeout(this.placementAnimationTimer);
+      this.placementAnimationTimer = null;
+    }
   },
 
   makeEmptyBoard() {
@@ -250,16 +255,6 @@ Page({
   },
 
   createHeader() {
-    text({
-      x: 16,
-      y: 6,
-      w: 110,
-      h: 20,
-      value: "BLOCKS",
-      color: ACCENT,
-      size: 16,
-    });
-
     this.scoreText =
       text({
         x: 16,
@@ -334,6 +329,7 @@ Page({
     this.selectedPiece = -1;
     this.hoverCell = null;
     this.usedPieces = 0;
+    this.placementAnimation = null;
 
     this.board =
       this.makeEmptyBoard();
@@ -347,9 +343,6 @@ Page({
     this.score = 0;
 
     this.updateScoreText();
-    this.setStatus(
-      "TAP A BLOCK"
-    );
     this.redraw();
   },
 
@@ -456,9 +449,6 @@ Page({
       if (
         this.selectedPiece < 0
       ) {
-        this.setStatus(
-          "TAP A BLOCK"
-        );
         vibrateLight();
         this.redraw();
 
@@ -533,10 +523,6 @@ Page({
       this.selectedPiece = -1;
       this.hoverCell = null;
 
-      this.setStatus(
-        "TAP A BLOCK"
-      );
-
       this.redraw();
 
       return;
@@ -546,10 +532,6 @@ Page({
       index;
 
     this.hoverCell = null;
-
-    this.setStatus(
-      "TAP A GRID SPACE"
-    );
 
     vibrateLight();
     this.redraw();
@@ -569,7 +551,8 @@ Page({
       return;
     }
 
-    // row/col is the exact origin of [0,0].
+    // A placement is valid only when every target cell is
+    // inside the board and currently empty.
     if (
       !this.canPlace(
         piece,
@@ -577,26 +560,46 @@ Page({
         col
       )
     ) {
-      this.setStatus(
-        "NO ROOM HERE"
-      );
-
       vibrateLight();
       return;
     }
 
     this.locked = true;
 
+    const placedCells = [];
+
     for (
       const [dr, dc]
       of piece.cells
     ) {
-      this.board[row + dr][col + dc] =
-        piece.color;
+      const targetRow = row + dr;
+      const targetCol = col + dc;
+
+      // Defensive collision check immediately before writing.
+      if (
+        targetRow < 0 ||
+        targetRow >= BOARD_SIZE ||
+        targetCol < 0 ||
+        targetCol >= BOARD_SIZE ||
+        this.board[targetRow][targetCol] !== null
+      ) {
+        this.locked = false;
+        vibrateLight();
+        return;
+      }
+
+      placedCells.push({
+        row: targetRow,
+        col: targetCol,
+        color: piece.color,
+      });
     }
 
-    this.score +=
-      piece.cells.length;
+    for (const cell of placedCells) {
+      this.board[cell.row][cell.col] = cell.color;
+    }
+
+    this.score += piece.cells.length;
 
     this.pieces[
       this.selectedPiece
@@ -605,58 +608,13 @@ Page({
     this.selectedPiece = -1;
     this.usedPieces += 1;
 
-    vibrateLight();
     const clearInfo =
       this.getCompletedLines();
 
     if (
-      clearInfo.lineCount > 0
+      this.score > this.best
     ) {
-      const lineBonus =
-        clearInfo.lineCount *
-          10 +
-        Math.max(
-          0,
-          clearInfo.lineCount - 1
-        ) *
-          5;
-
-      this.score +=
-        lineBonus;
-
-      for (
-        const [clearRow, clearCol]
-        of clearInfo.cells
-      ) {
-        this.board[clearRow][clearCol] =
-          null;
-      }
-
-      this.setStatus(
-        clearInfo.lineCount +
-        " LINE" +
-        (
-          clearInfo.lineCount === 1
-            ? ""
-            : "S"
-        ) +
-        " CLEARED"
-      );
-
-      vibrateStrong();
-    } else {
-      this.setStatus(
-        "KEEP GOING"
-      );
-    }
-
-    if (
-      this.score >
-      this.best
-    ) {
-      this.best =
-        this.score;
-
+      this.best = this.score;
       setNumber(
         "blockblast_best",
         this.best
@@ -665,33 +623,80 @@ Page({
 
     this.updateScoreText();
 
-    // Replace all three pieces only after the third piece is used.
-    if (
-      this.usedPieces === 3
-    ) {
-      this.pieces = [
-        randomPiece(),
-        randomPiece(),
-        randomPiece(),
-      ];
+    // Tiny 55 ms placement pop: fast enough to feel instant.
+    this.placementAnimation = {
+      cells: placedCells,
+    };
 
-      this.usedPieces = 0;
-      this.setStatus(
-        "NEW BLOCKS"
-      );
-    }
-
-    // Check the next available pieces immediately.
-    if (
-      !this.hasAnyMove()
-    ) {
-      this.endGame();
-      return;
-    }
-
-    this.locked = false;
-    this.hoverCell = null;
+    vibrateLight();
     this.redraw();
+
+    if (this.placementAnimationTimer) {
+      clearTimeout(this.placementAnimationTimer);
+    }
+
+    this.placementAnimationTimer =
+      setTimeout(() => {
+        this.placementAnimationTimer = null;
+        this.placementAnimation = null;
+
+        if (
+          clearInfo.lineCount > 0
+        ) {
+          const lineBonus =
+            clearInfo.lineCount * 10 +
+            Math.max(
+              0,
+              clearInfo.lineCount - 1
+            ) * 5;
+
+          this.score += lineBonus;
+
+          for (
+            const [clearRow, clearCol]
+            of clearInfo.cells
+          ) {
+            this.board[clearRow][clearCol] = null;
+          }
+
+          vibrateStrong();
+        }
+
+        if (
+          this.usedPieces === 3
+        ) {
+          this.pieces = [
+            randomPiece(),
+            randomPiece(),
+            randomPiece(),
+          ];
+
+          this.usedPieces = 0;
+        }
+
+        if (
+          !this.hasAnyMove()
+        ) {
+          this.endGame();
+          return;
+        }
+
+        this.locked = false;
+        this.hoverCell = null;
+
+        if (
+          this.score > this.best
+        ) {
+          this.best = this.score;
+          setNumber(
+            "blockblast_best",
+            this.best
+          );
+        }
+
+        this.updateScoreText();
+        this.redraw();
+      }, 55);
   },
 
   canPlace(
@@ -901,11 +906,6 @@ Page({
     );
   },
 
-  setStatus(value) {
-    this.status =
-      String(value);
-  },
-
   drawRoundedBlock(
     x,
     y,
@@ -1077,6 +1077,10 @@ Page({
       GRID_FRAME,
       14
     );
+
+    const animated = this.placementAnimation
+      ? this.placementAnimation.cells
+      : null;
 
     for (
       let row = 0;
@@ -1393,23 +1397,20 @@ Page({
     });
   },
 
-  drawStatus() {
-    const status =
-      this.status ||
-      (
-        this.selectedPiece >=
-          0
-          ? "TAP A GRID SPACE"
-          : "TAP A BLOCK"
-      );
+  drawPlacementAnimation() {
+    if (!this.placementAnimation) {
+      return;
+    }
 
-    this.drawTextCentered(
-      status,
-      WIDTH / 2,
-      318,
-      13,
-      MUTED
-    );
+    for (const cell of this.placementAnimation.cells) {
+      this.drawRoundedBlock(
+        BOARD_X + cell.col * STRIDE,
+        BOARD_Y + cell.row * STRIDE,
+        CELL,
+        cell.color,
+        0.58
+      );
+    }
   },
 
   drawGameOver() {
@@ -1498,41 +1499,9 @@ Page({
     this.drawBoard();
     this.drawGhost();
     this.drawTray();
-    this.drawStatus();
+    this.drawPlacementAnimation();
     this.drawGameOver();
   },
 
-  easeOutCubic(t) {
-    const inverse =
-      1 - t;
 
-    return 1 -
-      inverse *
-        inverse *
-        inverse;
-  },
-
-  easeInCubic(t) {
-    return t * t * t;
-  },
-
-  easeOutBack(t) {
-    const c1 = 1.70158;
-    const c3 =
-      c1 + 1;
-
-    return (
-      1 +
-      c3 *
-        Math.pow(
-          t - 1,
-          3
-        ) +
-      c1 *
-        Math.pow(
-          t - 1,
-          2
-        )
-    );
-  },
 });
