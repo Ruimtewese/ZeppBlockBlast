@@ -537,7 +537,6 @@ Page({
         "TAP A BLOCK"
       );
 
-      this.stopAnimationLoopIfIdle();
       this.redraw();
 
       return;
@@ -905,8 +904,6 @@ Page({
   setStatus(value) {
     this.status =
       String(value);
-
-    this.redraw();
   },
 
   drawRoundedBlock(
