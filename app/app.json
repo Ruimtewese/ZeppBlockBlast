@@ -2,15 +2,15 @@
   "configVersion": "v3",
   "app": {
     "appId": 20948,
-    "appName": "Hello World",
+    "appName": "ZeppBlockBlast",
     "appType": "app",
     "version": {
       "code": 1,
-      "name": "1.0.1"
+      "name": "1.0.0"
     },
     "icon": "icon.png",
     "vender": "zepp",
-    "description": "hello world app"
+    "description": "A lightweight block puzzle game for Zepp OS."
   },
   "permissions": [
     "data:os.device.info",
@@ -41,15 +41,15 @@
           "st": "s"
         }
       ],
-      "designWidth": 480
+      "designWidth": 390
     }
   },
   "i18n": {
     "en-US": {
-      "appName": "Hello World"
+      "appName": "ZeppBlockBlast"
     },
     "zh-CN": {
-      "appName": "你好世界"
+      "appName": "Zepp Block Blast"
     }
   },
   "defaultLanguage": "en-US"
