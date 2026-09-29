@@ -1,17 +1,17 @@
 {
-  "name": "helloworld",
+  "name": "zeppblockblast",
   "version": "1.0.0",
-  "description": "",
+  "description": "A lightweight block puzzle game for Zepp OS.",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"No tests configured\""
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Ruimtewese",
+  "license": "MIT",
   "devDependencies": {
     "@zeppos/device-types": "^3.0.0"
   },
   "dependencies": {
-    "@zeppos/zml": "^0.0.38"
+    "zeppcore": "github:Ruimtewese/ZeppCore"
   }
 }
