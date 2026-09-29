@@ -2,6 +2,7 @@ import {
   setupPage,
   text,
   pillAligned,
+  prop,
   getNumber,
   setNumber,
   vibrateLight,
@@ -36,9 +37,9 @@ const TRAY_W = 112;
 const TRAY_H = 106;
 const TRAY_GAP = 9;
 const TRAY_X = [
-  8,
-  8 + TRAY_W + TRAY_GAP,
-  8 + (TRAY_W + TRAY_GAP) * 2,
+  18,
+  18 + TRAY_W + TRAY_GAP,
+  18 + (TRAY_W + TRAY_GAP) * 2,
 ];
 
 const PREVIEW_CELL = 15;
@@ -134,8 +135,8 @@ Page({
 
   build() {
     this.createBackground();
-    this.createHeader();
 
+    // Create the canvas first so header widgets remain above it.
     this.canvas = createWidget(widget.CANVAS, {
       x: 0,
       y: 0,
@@ -148,6 +149,7 @@ Page({
       (info) => this.onCanvasTap(info.x, info.y)
     );
 
+    this.createHeader();
     this.createNewButton();
 
     onBackKey(() => exitApp());
@@ -576,7 +578,7 @@ Page({
 
     if (this.statusText) {
       this.statusText.setProperty(
-        12,
+        prop.MORE,
         {
           text: String(value),
         }
