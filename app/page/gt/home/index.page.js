@@ -26,14 +26,14 @@ const WIDTH = 390;
 const HEIGHT = 450;
 
 const BOARD_SIZE = 8;
-const CELL = 32;
+const CELL = 30;
 const GAP = 2;
 const STRIDE = CELL + GAP;
-const BOARD_X = 60;
-const BOARD_Y = 64;
+const BOARD_X = 63;
+const BOARD_Y = 62;
 const BOARD_PX = BOARD_SIZE * CELL + (BOARD_SIZE - 1) * GAP;
 
-const TRAY_Y = 348;
+const TRAY_Y = 350;
 const TRAY_W = 108;
 const TRAY_H = 94;
 const TRAY_X = [18, 141, 264];
@@ -198,17 +198,13 @@ Page({
       for (let col = 0; col < BOARD_SIZE; col += 1) {
         const r = row;
         const c = col;
-        const cell = button({
+        const cell = card({
           x: BOARD_X + c * STRIDE,
           y: BOARD_Y + r * STRIDE,
           w: CELL,
           h: CELL,
-          text: "",
-          textSize: 1,
-          color: 0x000000,
-          normalColor: EMPTY,
-          pressColor: EMPTY_PRESSED,
-          radius: 8,
+          color: EMPTY,
+          radius: 7,
           onClick: () => this.onBoardTap(r, c),
         });
         this.boardWidgets.push(cell);
